@@ -7,5 +7,6 @@
 
 #include <iostream>
 using namespace std;
-bool udpTraverse(string peerAddr,string uAddr);
+bool udpTraverse(string uAddr,string peerAddr);
+extern char g_svrIP[];
 #endif //NATTRAVERSECLIENTMUDUO_UDPTRAVERSE_HPP

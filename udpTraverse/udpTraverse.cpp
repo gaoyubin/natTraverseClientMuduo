@@ -53,7 +53,7 @@ void* recvUdpBuf(void *arg){
 
 }
 
-bool udpTraverse(string peerAddr,string uAddr) {
+bool udpTraverse(string uAddr,string peerAddr) {
 
     struct sockaddr_in uAddrIn;
     struct sockaddr_in peerAddrIn;
