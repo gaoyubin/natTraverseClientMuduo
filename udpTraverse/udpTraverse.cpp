@@ -15,7 +15,7 @@
 #include <unistd.h>
 using namespace std;
 
-bool isTraverse=false;
+bool  g_isTraverse=false;
 
 void* recvUdpBuf(void *arg){
 
@@ -42,9 +42,10 @@ void* recvUdpBuf(void *arg){
 
             printf("this socket addr %s %d successful\n",inet_ntoa(peerAddr.sin_addr),ntohs(peerAddr.sin_port));
 
-            isTraverse=true;
+            g_isTraverse=true;
             printf("recBuf fn rec %s\n",inBuf);
-            break;
+
+            //break;
 
         }
 
@@ -59,8 +60,8 @@ bool udpTraverse(string peerAddr,string uAddr) {
     int sockfd;
     uint16_t  uPort,peerPort;
     char uIP[32]={0},peerIP[32]={0};
-
     sscanf(uAddr.c_str(),"%[^:]:%d",uIP,&uPort);
+
 	uAddrIn.sin_family = AF_INET;
 	uAddrIn.sin_port = htons(uPort);
 	uAddrIn.sin_addr.s_addr = inet_addr(uIP);
@@ -82,16 +83,29 @@ bool udpTraverse(string peerAddr,string uAddr) {
 		perror("socket() failed:");
 		return false;
 	}
+    int reuse = 1;
+    int ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    if (ret) {
+        exit(1);
+    }
+
+    ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
+    if (ret) {
+        exit(1);
+    }
     if (bind(sockfd,(struct sockaddr*)&uAddrIn,sizeof(uAddrIn)) == -1) {
-        perror("bind() failed:");
+        perror("traverse udp bind() failed:");
         return false;
     }
     pthread_t  ptd;
     pthread_create(&ptd,NULL,recvUdpBuf,&sockfd);
 	for (int i = 0; i < 30; ++i)
 	{
-        if(isTraverse==true){
+        if(g_isTraverse==true){
             cout<<"traverse success"<<endl;
+
+            //close(sockfd);
+            //modify by gaoyubin
             return true;
         }
 
@@ -100,11 +114,14 @@ bool udpTraverse(string peerAddr,string uAddr) {
 		int len = sendto(sockfd,outStr.c_str(),outStr.size(),0,(struct sockaddr*)&peerAddrIn,sizeof(peerAddrIn));
 		if (len == -1) {
 			perror("while sending package to C2 , sendto() failed:");
+            close(sockfd);
 			return false;
 		}
-        //cout<<outStr<<endl;
+        cout<<outStr<<endl;
 
 	}
+    //close(sockfd);
+    return false;
 
 }
 
