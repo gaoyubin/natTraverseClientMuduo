@@ -95,11 +95,21 @@ int main(int argc, char* argv[])
 #include <sys/ioctl.h>
 #include "stun/stun.h"
 #include "udpTraverse/udpTraverse.hpp"
+#include "udpTurn/udpTurn.hpp"
 
 using namespace std;
 
-
 #define MAX_IFS 32
+
+string uname;
+//char g_svrIP[30] = "218.192.170.178";
+char g_svrIP[30] = "192.168.1.101";
+int g_hostPort;       // in detect
+string g_reflexAddr;  // in detect can get
+string g_peerAddr;    // in traverse or turn
+int g_udpTurnSvrPort; // in turn
+int g_tcpTurnSvrPort = 2007;
+
 int getIpInterface(char *localIp,char *netMask,char*netInterface){
     struct ifreq *ifr, *ifend;
     struct ifreq ifreq;
@@ -123,19 +133,22 @@ int getIpInterface(char *localIp,char *netMask,char*netInterface){
         //cout<<tmp.size()<<endl;
         //cout<<tmp.c_str()<<endl;
         //cout<<sizeof(tmp.c_str())<<endl;
-        snprintf(localIp,tmp.size()+1, "%s", tmp.c_str());
+        if(localIp!=NULL)
+            snprintf(localIp,tmp.size()+1, "%s", tmp.c_str());
         //localIp=inet_ntoa( ( (struct sockaddr_in *)  &ifr->ifr_addr)->sin_addr);
         if (ifr->ifr_addr.sa_family == AF_INET && strcmp(localIp,"127.0.0.1")!=0 ) {
 
             strncpy(ifreq.ifr_name, ifr->ifr_name,sizeof(ifreq.ifr_name));
-            strncpy(netInterface, ifr->ifr_name,sizeof(ifreq.ifr_name));
+            if(netInterface!=NULL)
+                strncpy(netInterface, ifr->ifr_name,sizeof(ifreq.ifr_name));
             if (ioctl (SockFD, SIOCGIFNETMASK, &ifreq) < 0) {
                 printf("SIOCGIFHWADDR(%s): %m\n", ifreq.ifr_name);
                 return 0;
             }
             tmp=(inet_ntoa( ( (struct sockaddr_in*)&ifreq.ifr_ifru)->sin_addr));
             //cout<<tmp.size()<<endl;
-            snprintf(netMask,tmp.size()+1, "%s",tmp.c_str());
+            if(netMask!=NULL)
+                snprintf(netMask,tmp.size()+1, "%s",tmp.c_str());
             break;
 
 
@@ -162,10 +175,13 @@ void sendRespondCmd(int sockfd,string answerCmd,string state){
 
     sendCodec(sockfd,outVal.toStyledString());
 }
-string uname;
-extern StunAddress4 globalReflexAddr;
+
+extern StunAddress4 g_reflexStunAddr4;
+
 void * recvTcpBuf (void *arg){
     int sockfd=*((int*)arg);
+
+
     while(1){
         char inBuf[1000]={0};
         int recvByte;
@@ -199,26 +215,33 @@ void * recvTcpBuf (void *arg){
                     cout<<netInterface<<endl;
 
                     srand(getpid());
-                    int hostPort=rand()%2000+1024;
+                    g_hostPort=rand()%2000+1024;
                     char* myArgv[]={"client","stun.ekiga.net","-p",""};
+                    //if(inVal.isNull())
+                    char natSvrIP[20];
+                    if(!inVal["stunSvrIP"].isNull()){
 
+                        sprintf(natSvrIP,"%s",inVal["stunSvrIP"].asString().c_str());
+                        myArgv[1]=natSvrIP;
+                    }
 
                     char portStr[10];
-                    sprintf(portStr,"%d",hostPort);
+                    sprintf(portStr,"%d",g_hostPort);
                     myArgv[3]=portStr;
                     NatType natType=(NatType)stunDetect(4,myArgv);
-                    string hostAddr,reflexAddr;
+                    string hostAddr;
 
                     hostAddr=hostIP;
-                    hostAddr+=":"+to_string(hostPort);
+                    hostAddr+=":"+to_string(g_hostPort);
                     cout<<hostAddr<<endl;
 
 
-                    int tmpInt=ntohl(globalReflexAddr.addr);
-                    reflexAddr=inet_ntoa(*  (struct in_addr *)&tmpInt);
+                    int tmpInt=ntohl(g_reflexStunAddr4.addr);
+                    g_reflexAddr=inet_ntoa(*  (struct in_addr *)&tmpInt);
 
-                    reflexAddr+=":"+to_string(globalReflexAddr.port);//放在string里面，不用考虑字节序问题
-                    cout<<globalReflexAddr.port<<endl;
+                    g_reflexAddr+=":"+to_string(g_reflexStunAddr4.port);//放在string里面，不用考虑字节序问题
+
+                    cout<<g_reflexStunAddr4.port<<endl;
 
 
                     Json::Value outVal;
@@ -228,7 +251,7 @@ void * recvTcpBuf (void *arg){
                     outVal["natType"]=natType;
                     outVal["hostAddr"]=hostAddr;
                     outVal["netMask"]=netMask;
-                    outVal["reflexAddr"]=reflexAddr;
+                    outVal["reflexAddr"]=g_reflexAddr;
 
 
                     string sendStr=outVal.toStyledString();
@@ -237,18 +260,84 @@ void * recvTcpBuf (void *arg){
 
                 }
                 else if(inVal["cmd"]=="traverse"){
-                    string uAddr=inVal["uAddr"].asString();
+                    //no use this,use the host ip
+                    //string uAddr=inVal["uAddr"].asString();
+
+                    string uAddr="0.0.0.0";
+                    uAddr+=":"+to_string(g_hostPort);
+
                     string peerAddr=inVal["peerAddr"].asString();
                     if(udpTraverse(uAddr,peerAddr)==true){
+                        g_peerAddr=peerAddr;
                         sendRespondCmd(sockfd,"traverse","OK");
+
                     }
                     else{
                         sendRespondCmd(sockfd,"traverse","FAIL");
                     }
 
                 }
+                else if(inVal["cmd"]=="udpTurn"){
+                    string id=inVal["id"].asString();
+                    g_udpTurnSvrPort=inVal["port"].asInt();
+
+                    if(udpTurn("0.0.0.0",g_hostPort,g_svrIP,g_udpTurnSvrPort,id)==true){
+                        g_peerAddr=g_svrIP;
+                        g_peerAddr+=":"+ to_string(g_udpTurnSvrPort);
+                        cout<<"g_peerAddr"<<" "<<g_peerAddr<<endl;
+                        sendRespondCmd(sockfd,"udpTurn","OK");
+                        cout<<"turn ok"<<endl;
+                        //string outStr="hello world";
+                        //sendto(sockfd ,outStr.c_str() , outStr.size(), 0, (struct sockaddr *)&svrAddrIn, sizeof(svrAddrIn));
+                    }else{
+                        cout<<"turn fail"<<endl;
+                    }
+
+                }
                 else if(inVal["cmd"]=="start"){
                     cout<<"start to live555"<<endl;
+                    struct sockaddr_in peerAddrIn;
+                    struct sockaddr_in hostAddrIn;
+                    char peerIP[32]={0};
+                    int peerPort=0;
+                    sscanf(g_peerAddr.c_str(),"%[^:]:%d",peerIP,&peerPort);
+                    peerAddrIn.sin_family=AF_INET;
+                    peerAddrIn.sin_addr.s_addr=inet_addr(peerIP);
+                    peerAddrIn.sin_port=htons(peerPort);
+
+                    hostAddrIn.sin_family = AF_INET;
+                    hostAddrIn.sin_port = htons(g_hostPort);
+                    hostAddrIn.sin_addr.s_addr = INADDR_ANY;
+
+                    cout<<"|"<<g_hostPort<<endl;
+                    cout<<peerIP<<"|"<<peerPort<<endl;
+
+                    //建立与服务器通信的socket和与客户端通信的socket
+                    int udpSockfd;
+                    udpSockfd = socket(AF_INET,SOCK_DGRAM,0);
+                    if (udpSockfd == -1) {
+                        perror("socket() failed:");
+                        return false;
+                    }
+                    /****************************/
+                    int reuse = 1;
+                    int ret = setsockopt(udpSockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+                    if (ret) {
+                        exit(1);
+                    }
+
+                    ret = setsockopt(udpSockfd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
+                    if (ret) {
+                        exit(1);
+                    }
+                    /****************************/
+                    if (bind(udpSockfd,(struct sockaddr*)&hostAddrIn,sizeof(hostAddrIn)) == -1) {
+                        perror("bind() failed:");
+                        return false;
+                    }
+
+                    string outStr="hello world gaoyubin";
+                    sendto(udpSockfd ,outStr.c_str() , outStr.size(), 0, (struct sockaddr *)&peerAddrIn, sizeof(peerAddrIn));
                 }
 
             }
@@ -259,6 +348,7 @@ void * recvTcpBuf (void *arg){
 
 
     }
+    cout<<"break out the recvTcpBuf fn---------------------------"<<endl;
 
 }
 
@@ -352,7 +442,12 @@ int  onLogin(int sockfd,string& uname,string pwd="123456",string cs="s"){
 int onSee(){
 
 }
+
+
+
+
 int main(int argc,char *argv[]) {
+
 
 
 //    if(argc<3){
@@ -376,8 +471,7 @@ int main(int argc,char *argv[]) {
     char recvbuffer[200];
     //  char buffer[1024];
     struct sockaddr_in svrAddrIn;
-    char svrIP[] = "192.168.1.103";
-    int portnumber = 2007, nbytes;
+
 
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         fprintf(stderr, "Socket Error:%s\a\n", strerror(errno));
@@ -386,8 +480,8 @@ int main(int argc,char *argv[]) {
 
     bzero(&svrAddrIn, sizeof(svrAddrIn));
     svrAddrIn.sin_family = AF_INET;
-    svrAddrIn.sin_port = htons(portnumber);
-    svrAddrIn.sin_addr.s_addr = inet_addr(svrIP);
+    svrAddrIn.sin_port = htons(g_tcpTurnSvrPort);
+    svrAddrIn.sin_addr.s_addr = inet_addr(g_svrIP);
     memset(&svrAddrIn.sin_zero, 0, 8);
     if (connect(sockfd, (struct sockaddr *) (&svrAddrIn), sizeof(struct sockaddr)) == -1) {
         fprintf(stderr, "Connect error:%s\n", strerror(errno));
@@ -424,7 +518,7 @@ int main(int argc,char *argv[]) {
             cout << "this cmd is invalid" << endl;
         }
 
-        cout << "send" << outStr.c_str() << endl;
+        cout << "send " << outStr.c_str() << endl;
         sendCodec(sockfd, outStr);
 
     }
