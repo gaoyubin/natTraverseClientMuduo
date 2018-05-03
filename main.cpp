@@ -93,72 +93,46 @@ int main(int argc, char* argv[])
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
-#include "stun/stun.h"
+#include <sstream>
+
 #include "udpTraverse/udpTraverse.hpp"
 #include "udpTurn/udpTurn.hpp"
+#include "stun/MyStun.hpp"
 
 using namespace std;
 
 #define MAX_IFS 32
 
 string uname;
-//char g_svrIP[30] = "218.192.170.178";
-char g_svrIP[30] = "192.168.1.101";
+//char g_centreSvrIP[30] = "218.192.170.178";
+char g_centreSvrIP[30] = "192.168.1.101";
+int  g_centreSvrPort=2007;
 int g_hostPort;       // in detect
 string g_reflexAddr;  // in detect can get
 string g_peerAddr;    // in traverse or turn
+
+vector<AddrPair> g_trAddrPairVect;
+
 int g_udpTurnSvrPort; // in turn
-int g_tcpTurnSvrPort = 2007;
 
-int getIpInterface(char *localIp,char *netMask,char*netInterface){
-    struct ifreq *ifr, *ifend;
-    struct ifreq ifreq;
-    struct ifconf ifc;
-    struct ifreq ifs[MAX_IFS];
-    int SockFD;
+extern StunAddress4 g_reflexStunAddr4h;
+/*********************/
+//vector<AddrPair> addrPairVect;
+//AddrTriple g_addrTriple;
+//StunAddress4
 
-    SockFD = socket(AF_INET, SOCK_DGRAM, 0);
-    ifc.ifc_len = sizeof(ifs);
-    ifc.ifc_req = ifs;
+//vector<tuple<StunAddress4,int,int>>g_addrTupleVect;
 
-    if (ioctl(SockFD, SIOCGIFCONF, &ifc) < 0) {
-        printf("ioctl(SIOCGIFCONF): %m\n");
-        return 0;
+vector<TrAddrInfo>g_traverseAddrInfoVect;
+typedef enum{
+    TraverseMethodCone,
+    TraverseMethodOpen,
+    TraverseMethodSymInc,
+    TraverseMethodSymRandom,
+    TraverseMethodTurn,
 
-    }
+}TraverseMethod;
 
-    ifend = ifs + (ifc.ifc_len / sizeof(struct ifreq));
-    for (ifr = ifc.ifc_req; ifr < ifend; ifr++) {
-        string tmp(inet_ntoa( ( (struct sockaddr_in *)&ifr->ifr_addr)->sin_addr));
-        //cout<<tmp.size()<<endl;
-        //cout<<tmp.c_str()<<endl;
-        //cout<<sizeof(tmp.c_str())<<endl;
-        if(localIp!=NULL)
-            snprintf(localIp,tmp.size()+1, "%s", tmp.c_str());
-        //localIp=inet_ntoa( ( (struct sockaddr_in *)  &ifr->ifr_addr)->sin_addr);
-        if (ifr->ifr_addr.sa_family == AF_INET && strcmp(localIp,"127.0.0.1")!=0 ) {
-
-            strncpy(ifreq.ifr_name, ifr->ifr_name,sizeof(ifreq.ifr_name));
-            if(netInterface!=NULL)
-                strncpy(netInterface, ifr->ifr_name,sizeof(ifreq.ifr_name));
-            if (ioctl (SockFD, SIOCGIFNETMASK, &ifreq) < 0) {
-                printf("SIOCGIFHWADDR(%s): %m\n", ifreq.ifr_name);
-                return 0;
-            }
-            tmp=(inet_ntoa( ( (struct sockaddr_in*)&ifreq.ifr_ifru)->sin_addr));
-            //cout<<tmp.size()<<endl;
-            if(netMask!=NULL)
-                snprintf(netMask,tmp.size()+1, "%s",tmp.c_str());
-            break;
-
-
-        }
-
-    }
-    return 0;
-
-
-}
 int sendCodec(int sockfd,string sendStr){
     char*sendArr=new char[sendStr.size()+sizeof(int32_t)];
     int32_t len=sendStr.size();
@@ -176,7 +150,7 @@ void sendRespondCmd(int sockfd,string answerCmd,string state){
     sendCodec(sockfd,outVal.toStyledString());
 }
 
-extern StunAddress4 g_reflexStunAddr4;
+
 
 void * recvTcpBuf (void *arg){
     int sockfd=*((int*)arg);
@@ -202,6 +176,15 @@ void * recvTcpBuf (void *arg){
             if(!inVal["cmd"].isNull()){
                 if(inVal["cmd"]=="respond"){
                     cout<<"respond"<<inVal["answerCmd"]<<":"<<inVal["state"]<<endl;
+                    if(inVal["answerCmd"]=="list"){
+                        string userList=inVal["extraInfo"].asString();
+                        istringstream  iss(userList);
+                        string s;
+                        while(iss>>s){
+                            cout<<s<<endl;
+                        }
+
+                    }
                 }
                 else if(inVal["cmd"]=="detect"){
 
@@ -214,21 +197,23 @@ void * recvTcpBuf (void *arg){
                     cout<<hostIP<<endl;
                     cout<<netInterface<<endl;
 
-                    srand(getpid());
+
                     g_hostPort=rand()%2000+1024;
-                    char* myArgv[]={"client","stun.ekiga.net","-p",""};
-                    //if(inVal.isNull())
-                    char natSvrIP[20];
+
+                    StunAddress4 dest1;
                     if(!inVal["stunSvrIP"].isNull()){
-
-                        sprintf(natSvrIP,"%s",inVal["stunSvrIP"].asString().c_str());
-                        myArgv[1]=natSvrIP;
+                        dest1.addr=ntohl(inet_addr(inVal["stunSvrIP"].asString().c_str()));
                     }
+                    else{
+                        dest1.addr=ntohl(inet_addr("217.10.68.152"));
+                    }
+                    dest1.port=3478;
+                    StunAddress4 sAddr;
+                    sAddr.port=g_hostPort;
 
-                    char portStr[10];
-                    sprintf(portStr,"%d",g_hostPort);
-                    myArgv[3]=portStr;
-                    NatType natType=(NatType)stunDetect(4,myArgv);
+                    MyNatType natType=detectNatType(dest1,false,&sAddr);
+                    cout<<getNatTypeStr(natType)<<endl;
+
                     string hostAddr;
 
                     hostAddr=hostIP;
@@ -236,12 +221,12 @@ void * recvTcpBuf (void *arg){
                     cout<<hostAddr<<endl;
 
 
-                    int tmpInt=ntohl(g_reflexStunAddr4.addr);
+                    int tmpInt=ntohl(g_reflexStunAddr4h.addr);
                     g_reflexAddr=inet_ntoa(*  (struct in_addr *)&tmpInt);
 
-                    g_reflexAddr+=":"+to_string(g_reflexStunAddr4.port);//放在string里面，不用考虑字节序问题
+                    g_reflexAddr+=":"+to_string(g_reflexStunAddr4h.port);//放在string里面，不用考虑字节序问题
 
-                    cout<<g_reflexStunAddr4.port<<endl;
+                    cout<<g_reflexStunAddr4h.port<<endl;
 
 
                     Json::Value outVal;
@@ -263,26 +248,78 @@ void * recvTcpBuf (void *arg){
                     //no use this,use the host ip
                     //string uAddr=inVal["uAddr"].asString();
 
-                    string uAddr="0.0.0.0";
-                    uAddr+=":"+to_string(g_hostPort);
+//                    string uAddr="0.0.0.0";
+//                    uAddr+=":"+to_string(g_hostPort);
+//
+//                    string peerAddr=inVal["peerAddr"].asString();
+//                    if( udpTraverse(uAddr,peerAddr)==true ){
+//                        g_peerAddr=peerAddr;
+//                        sendRespondCmd(sockfd,"traverse","OK");
+//
+//                    }
+//                    else{
+//                        sendRespondCmd(sockfd,"traverse","FAIL");
+//                    }
 
-                    string peerAddr=inVal["peerAddr"].asString();
-                    if(udpTraverse(uAddr,peerAddr)==true){
-                        g_peerAddr=peerAddr;
-                        sendRespondCmd(sockfd,"traverse","OK");
+                    int sizeOfCheckList=inVal["cnt"].asInt();
+//                    string uAddr="0.0.0.0";
+//                    uAddr+=":";
+//                    uAddr+=to_string(g_hostPort);
+                    //**************************************************
+                    //delete by gaoyubin
+//                    pthread_t  recvUdpBufTid;
+//                    pthread_create(&recvUdpBufTid,NULL,recvUdpBuf,&uAddr);
+                    g_traverseAddrInfoVect.clear();
+                    g_traverseAddrInfoVect.push_back(TrAddrInfo(Addr("0.0.0.0",g_hostPort),0,0));
 
+                    for(int i=0;i<sizeOfCheckList-1;++i){
+                        TraverseMethod traverseMethod=(TraverseMethod)inVal["checklist"][to_string(i)]["method"].asInt();
+                        string peerAddr=inVal["checklist"][to_string(i)]["peerAddr"].asString();
+                        if(traverseMethod==TraverseMethodCone)
+                        {
+
+                            uint16_t  peerPort;
+                            char peerIP[32]={0};
+
+                            sscanf(peerAddr.c_str(),"%[^:]:%d",peerIP,&peerPort);
+                            g_traverseAddrInfoVect.push_back(TrAddrInfo(Addr(peerIP,peerPort),0,0));
+
+                        }
+                        else if(traverseMethod==TraverseMethodSymRandom){
+                            uint16_t  peerPort;
+                            char peerIP[32]={0};
+
+                            sscanf(peerAddr.c_str(),"%[^:]:%d",peerIP,&peerPort);
+
+                            g_traverseAddrInfoVect.push_back(TrAddrInfo(Addr(peerIP,peerPort),1000,0));
+                        }
+
+
+                    }
+
+                    pthread_t  udpTraverseTid;
+                    pthread_create(&udpTraverseTid,NULL,udpTraverse,(void*)&g_traverseAddrInfoVect);
+
+                    pthread_join(udpTraverseTid,NULL);
+
+                    if(g_isTraversed==true){
+                        cout<<"traverse success"<<endl;
                     }
                     else{
-                        sendRespondCmd(sockfd,"traverse","FAIL");
+                        cout<<"traverse fail"<<endl;
+
                     }
+
+                }
+                else if(inVal["cmd"]=="getPort"){
 
                 }
                 else if(inVal["cmd"]=="udpTurn"){
                     string id=inVal["id"].asString();
                     g_udpTurnSvrPort=inVal["port"].asInt();
 
-                    if(udpTurn("0.0.0.0",g_hostPort,g_svrIP,g_udpTurnSvrPort,id)==true){
-                        g_peerAddr=g_svrIP;
+                    if(udpTurn("0.0.0.0",g_hostPort,g_centreSvrIP,g_udpTurnSvrPort,id)==true){
+                        g_peerAddr=g_centreSvrIP;
                         g_peerAddr+=":"+ to_string(g_udpTurnSvrPort);
                         cout<<"g_peerAddr"<<" "<<g_peerAddr<<endl;
                         sendRespondCmd(sockfd,"udpTurn","OK");
@@ -338,6 +375,7 @@ void * recvTcpBuf (void *arg){
 
                     string outStr="hello world gaoyubin";
                     sendto(udpSockfd ,outStr.c_str() , outStr.size(), 0, (struct sockaddr *)&peerAddrIn, sizeof(peerAddrIn));
+                    close(udpSockfd);
                 }
 
             }
@@ -444,7 +482,12 @@ int onSee(){
 }
 
 
-
+//void* threadFun(void *agr){
+//    while(1){
+//        sleep(1);
+//        cout<<"threadFun"<<endl;
+//    }
+//}
 
 int main(int argc,char *argv[]) {
 
@@ -464,7 +507,94 @@ int main(int argc,char *argv[]) {
 //    cout<<tmp<<endl;
 
     //udpTraverse(argv[1],argv[2]);
+
+//    StunAddress4 dest1;
+//    dest1.addr=ntohl(inet_addr("218.192.170.178"));
+//    //dest1.addr=ntohl(inet_addr("217.10.68.152"));
+//    dest1.port=3478;natTraverseCentreMuduo  natTraverseClientMu
+//    StunAddress4 sAddr;
+//    //sAddr.port
+//    char chTmp='a';
+//    cout<<to_string(chTmp)<<endl;
+//    cout<<chTmp<<endl;
+//    EmNatType res= detectNatType(dest1, false, NULL);
+//    cout<<getNatTypeStr(res)<<endl;
+
+
+//    int a=1200;
+//    string s="12";
+//    s+=to_string(a);
+//    cout<<s<<endl;
+
+//    pthread_t  ptd;
+//    pthread_create(&ptd, NULL, threadFun, NULL);
+//    sleep(5);
+//    pthread_cancel(ptd);
+
+//    string uAddr="0.0.0.0:3344";
+//    string peerAddr="192.168.1.103:8080";
+//    pthread_t udpTraverseTid;
+//    AddrPair udpTraverseArg(uAddr,peerAddr);
+//    pthread_create(&udpTraverseTid,NULL,udpTraverse,(void*)&udpTraverseArg);
+//    while (1);
+
+//    int arr[8]={0};
+//    arr[8]=12;
+//    int *ptr=NULL;
+//
+//
+//
+//    *ptr=12;
+
+//    for(int i=0;i<10;i++){
+//        srand(1);
+//        cout<<rand()<<endl;
+//    }
+//
+//
+//    while(1);
+//    Addr addr1;
+//    //Addr addr2();
+//    if(addr1==Addr()){
+//        //cout<<addr1.ip<<":"<<addr1.port<<endl;
+//        cout<<"hello"<<endl;
+//    }
+
+//    srand(getpid());
+//    StunAddress4 stunSvrAddr4,peerAddr4;
+//    stunSvrAddr4.addr=ntohl(inet_addr("218.192.170.178"));
+//    stunSvrAddr4.port=3478;
+//
+//    peerAddr4.addr=ntohl(inet_addr("218.192.170.178"));;
+//    peerAddr4.port=3479;
+//
+//
+//    Addr localAddr,startAddr,endAddr;
+//    localAddr.port=3456;
+//
+//    if(getSymIncRange(stunSvrAddr4,peerAddr4,localAddr,startAddr,endAddr)==true){
+//        cout<<startAddr.ip<<":"<<startAddr.port<<endl;
+//        cout<<endAddr.ip<<":"<<endAddr.port<<endl;
+//    }
+//    else{
+//        cout<<"get fail"<<endl;
+//    }
+
+    srand(getpid());
+    StunAddress4 dest1;
+    //dest1.addr=ntohl(inet_addr("217.10.68.152"));
+    dest1.addr=ntohl(inet_addr("218.192.170.178"));
+    dest1.port=3478;
+//
+    StunAddress4 sAddr;
+    sAddr.port=rand()%2000+22330;
+    cout<<"port: "<<sAddr.port<<endl;
+    MyNatType natType=detectNatType(dest1,false,&sAddr);
+    cout<<getNatTypeStr(natType)<<endl;
     /**************************************************************************/
+
+    //初始化随机种子
+    srand(getpid());
 
     int sockfd;
     char sendbuffer[200];
@@ -480,20 +610,31 @@ int main(int argc,char *argv[]) {
 
     bzero(&svrAddrIn, sizeof(svrAddrIn));
     svrAddrIn.sin_family = AF_INET;
-    svrAddrIn.sin_port = htons(g_tcpTurnSvrPort);
-    svrAddrIn.sin_addr.s_addr = inet_addr(g_svrIP);
+    svrAddrIn.sin_port = htons(g_centreSvrPort);
+    svrAddrIn.sin_addr.s_addr = inet_addr(g_centreSvrIP);
     memset(&svrAddrIn.sin_zero, 0, 8);
+
+    if(argc>2){
+        svrAddrIn.sin_port = htons(atoi(argv[2]));
+        svrAddrIn.sin_addr.s_addr = inet_addr(argv[1]);
+    }
     if (connect(sockfd, (struct sockaddr *) (&svrAddrIn), sizeof(struct sockaddr)) == -1) {
-        fprintf(stderr, "Connect error:%s\n", strerror(errno));
+        fprintf(stderr, "ConnatTraverseClientMuduonect error:%s\n", strerror(errno));
         exit(1);
     }
     pthread_t recvPtd;
     pthread_create(&recvPtd, NULL, recvTcpBuf, &sockfd);
 
+    if(argc<4){
+        printf("Please input your uname:\n");
+        cin >> uname;
+    }
+    else{
+        uname=argv[3];
+    }
 
-    printf("Please input your uname:\n");
     string outStr;
-    cin >> uname;
+
 
     onLogin(sockfd, uname);
 
@@ -507,15 +648,23 @@ int main(int argc,char *argv[]) {
             printf("Please input your peer:\n");
             string peerName;
             cin >> peerName;
-            Json::Value value;
-            value["uname"] = uname;
-            value["cmd"] = "see";
-            value["peerName"] = peerName;
-            value["peerPwd"] = "123456";
-            outStr = value.toStyledString();
-        } else {
+            Json::Value outVal;
+            outVal["uname"] = uname;
+            outVal["cmd"] = "see";
+            outVal["peerName"] = peerName;
+            outVal["peerPwd"] = "123456";
+            outStr = outVal.toStyledString();
+        }
+        else if(input=="list") {
+            Json::Value outVal;
+            outVal["cmd"] ="list";
+            outStr = outVal.toStyledString();
+
+        }
+        else {
             outStr=input;
             cout << "this cmd is invalid" << endl;
+            continue;
         }
 
         cout << "send " << outStr.c_str() << endl;

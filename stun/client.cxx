@@ -143,7 +143,7 @@ int stunDetect(int argc, char* argv[])
          bool presPort=false;
          bool hairpin=false;
 		
-         NatType stype = stunNatType( stunServerAddr, verbose, &presPort, &hairpin, 
+         NatType stype = stunNatType( stunServerAddr, verbose, &presPort, &hairpin,
                                       srcPort, &sAddr[nic]);
 		
          if ( nic == 0 )

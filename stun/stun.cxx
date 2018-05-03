@@ -1731,7 +1731,7 @@ stunBuildReqSimple( StunMessage* msg,
 
 static void 
 stunSendTest( Socket myFd, StunAddress4& dest, 
-              const StunAtrString& username, const StunAtrString& password, 
+              const StunAtrString& username, const StunAtrString& password,
               int testNum, bool verbose )
 { 
    assert( dest.addr != 0 );
@@ -1874,8 +1874,7 @@ stunTest( StunAddress4& dest, int testNum, bool verbose, StunAddress4* sAddr )
 }
 
 
-//add by gaoyubin
-StunAddress4 globalReflexAddr;
+
 
 
 NatType
@@ -2062,8 +2061,7 @@ stunNatType( StunAddress4& dest,
                            testImappedAddr.addr = resp.mappedAddress.ipv4.addr;
                            testImappedAddr.port = resp.mappedAddress.ipv4.port;
 
-                           //add by gaoyubin
-                            globalReflexAddr=testImappedAddr;
+
 			
                            respTestPreservePort = ( testImappedAddr.port == port ); 
                            if ( preservePort )
@@ -2072,7 +2070,9 @@ stunNatType( StunAddress4& dest,
                            }								
 									
                            testI2dest.addr = resp.changedAddress.ipv4.addr;
-									
+							//add by gaoyubin
+                            testI2dest.port=resp.changedAddress.ipv4.port;
+
                            if (sAddr)
                            {
                               sAddr->port = testImappedAddr.port;
@@ -2107,8 +2107,23 @@ stunNatType( StunAddress4& dest,
                            { 
                               mappedIpSame = true;
                            }
-								
-							
+							//add by gaoyubin
+                            struct in_addr   stInAddr;//必要的结构体，只要包含前面三个头文件，就不要犯愁这个结构的定义
+                            char ipaddr[20]; //保存转换后的地址
+
+                            char *pIp;
+                            stInAddr.s_addr=htonl(testI2mappedAddr.addr);
+                            pIp=inet_ntoa(stInAddr);
+                            strcpy(ipaddr,pIp);
+                            cout<<ipaddr<<":"<<testI2mappedAddr.port<<endl;
+
+                            stInAddr.s_addr=htonl(testImappedAddr.addr);
+                            pIp=inet_ntoa(stInAddr);
+                            strcpy(ipaddr,pIp);
+                            cout<<ipaddr<<":"<<testImappedAddr.port<<endl;
+
+
+
                         }
                         respTestI2=true;
                      }
