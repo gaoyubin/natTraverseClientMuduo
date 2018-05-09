@@ -4,7 +4,7 @@ project(natTraverseClientMuduo)
 add_definitions("-Wall -g")
 set(CMAKE_CXX_STANDARD 11)
 
-set(SOURCE_FILES main.cpp ./stun/stun.cxx ./stun/udp.cxx ./stun/client.cxx stun/client.hpp udpTraverse/udpTraverse.cpp udpTraverse/udpTraverse.hpp udpTurn/udpTurn.cpp udpTurn/udpTurn.hpp stun/MyStun.cpp stun/MyStun.hpp)
+set(SOURCE_FILES main.cpp ./stun/stun.cxx ./stun/udp.cxx ./stun/client.cxx stun/client.hpp udpTraverse/udpTraverse.cpp udpTraverse/udpTraverse.hpp udpTurn/udpTurn.cpp udpTurn/udpTurn.hpp stun/MyStun.cpp stun/MyStun.hpp heartBeat/heartBeat.cpp heartBeat/heartBeat.hpp main.hpp)
 
 
 

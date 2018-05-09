@@ -8,6 +8,8 @@
 
 #include "stun.h"
 #include "iostream"
+#include "../udpTraverse/udpTraverse.hpp"
+
 using namespace std;
 
 
@@ -36,7 +38,8 @@ typedef enum {
 MyNatType
 detectNatType(StunAddress4 &dest1,
               bool verbose,
-              StunAddress4 *sAddr // NIC to use
+              vector<Component>&compVect // NIC to use
+
 );
 string  getNatTypeStr(MyNatType natType);
 int getIpInterface(char *localIp,char *netMask,char*netInterface);
@@ -44,4 +47,6 @@ void
 stunSendTest( Socket myFd, StunAddress4& dest,
               const StunAtrString& username, const StunAtrString& password,
               int testNum, bool verbose );
+bool getSymIncPort(StunAddress4 &stunSvrAddr3478, vector<StunAddress4> &peerAddr4Vect, vector<Component> &compVect);
+
 #endif //NATTRAVERSECLIENTMUDUO_MYSTUNNATTYPE_HPP

@@ -77,8 +77,9 @@ typedef struct
 //      UInt32 addr=0;
 //} StunAddress4;
 
-struct StunAddress4
+class StunAddress4
 {
+public:
     StunAddress4(int addr=0,int port=0):addr(addr),port(port){}
     UInt32 addr=0;
     UInt16 port=0;
@@ -96,7 +97,29 @@ struct StunAddress4
 //
 //
 //    }
+//      bool operator==(StunAddress4 s){
+//       if()
+//    }
+    bool operator==(StunAddress4& b){
+       if(addr==b.addr && port==b.port)
+          return true;
+       else
+          return false;
 
+    }
+    bool operator<(StunAddress4& b){
+       if(addr<b.addr)
+          return true;
+       else if(addr==b.addr){
+          if(port<b.port)
+             return true;
+          else
+             return false;
+       }
+       else
+          return false;
+
+    }
 } ;
 
 typedef struct

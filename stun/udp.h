@@ -75,7 +75,11 @@ inline int getErrno() { return errno; }
 Socket
 openPort( unsigned short port, unsigned int interfaceIp,
           bool verbose);
-
+Socket
+openValidPort( unsigned short& port, unsigned int interfaceIp,
+          bool verbose);
+//Socket
+//myOpenPort( unsigned short& port, unsigned int interfaceIp, bool verbose );
 
 /// recive a UDP message 
 bool 

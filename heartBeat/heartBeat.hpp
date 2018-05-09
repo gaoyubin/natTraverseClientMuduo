@@ -1,0 +1,12 @@
+//
+// Created by tl on 18-5-7.
+//
+
+#ifndef NATTRAVERSECLIENTMUDUO_HEARTBEAT_HPP
+#define NATTRAVERSECLIENTMUDUO_HEARTBEAT_HPP
+
+
+void* sendHeartBeat(void *arg);
+
+
+#endif //NATTRAVERSECLIENTMUDUO_HEARTBEAT_HPP

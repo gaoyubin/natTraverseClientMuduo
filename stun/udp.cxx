@@ -32,10 +32,90 @@
 #include "udp.h"
 
 using namespace std;
+Socket
+openPort( unsigned short port, unsigned int interfaceIp, bool verbose )
+{
+   Socket fd;
+
+   fd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   if ( fd == INVALID_SOCKET )
+   {
+      int err = getErrno();
+      cerr << "Could not create a UDP socket:" << err << endl;
+      return INVALID_SOCKET;
+   }
+
+   struct sockaddr_in addr;
+   memset((char*) &(addr),0, sizeof((addr)));
+   addr.sin_family = AF_INET;
+   addr.sin_addr.s_addr = htonl(INADDR_ANY);
+   addr.sin_port = htons(port);
+
+   if ( (interfaceIp != 0) &&
+        ( interfaceIp != 0x100007f ) )
+   {
+      addr.sin_addr.s_addr = htonl(interfaceIp);
+      if (verbose )
+      {
+         clog << "Binding to interface "
+              << hex << "0x" << htonl(interfaceIp) << dec << endl;
+      }
+   }
+//   while(bind( fd,(struct sockaddr*)&addr, sizeof(addr)) == 0){
+//      perror("bind error");
+//      addr.sin_port=htons(++port);
+//
+//   }
+
+
+   if ( bind( fd,(struct sockaddr*)&addr, sizeof(addr)) != 0 )
+   {
+      int e = getErrno();
+
+      switch (e)
+      {
+         case 0:
+         {
+            cerr << "Could not bind socket" << endl;
+            return INVALID_SOCKET;
+         }
+         case EADDRINUSE:
+         {
+            cerr << "Port " << port << " for receiving UDP is in use" << endl;
+            return INVALID_SOCKET;
+         }
+         break;
+         case EADDRNOTAVAIL:
+         {
+            if ( verbose )
+            {
+               cerr << "Cannot assign requested address" << endl;
+            }
+            return INVALID_SOCKET;
+         }
+         break;
+         default:
+         {
+            cerr << "Could not bind UDP receive port"
+                 << "Error=" << e << " " << strerror(e) << endl;
+            return INVALID_SOCKET;
+         }
+         break;
+      }
+   }
+   if ( verbose )
+   {
+      clog << "Opened port " << port << " with fd " << fd << endl;
+   }
+
+   assert( fd != INVALID_SOCKET  );
+
+   return fd;
+}
 
 
 Socket
-openPort( unsigned short port, unsigned int interfaceIp, bool verbose )
+openValidPort( unsigned short& port, unsigned int interfaceIp, bool verbose )
 {
    Socket fd;
     
@@ -63,42 +143,49 @@ openPort( unsigned short port, unsigned int interfaceIp, bool verbose )
               << hex << "0x" << htonl(interfaceIp) << dec << endl;
       }
    }
-	
-   if ( bind( fd,(struct sockaddr*)&addr, sizeof(addr)) != 0 )
-   {
-      int e = getErrno();
-        
-      switch (e)
-      {
-         case 0:
-         {
-            cerr << "Could not bind socket" << endl;
-            return INVALID_SOCKET;
-         }
-         case EADDRINUSE:
-         {
-            cerr << "Port " << port << " for receiving UDP is in use" << endl;
-            return INVALID_SOCKET;
-         }
-         break;
-         case EADDRNOTAVAIL:
-         {
-            if ( verbose ) 
-            {
-               cerr << "Cannot assign requested address" << endl;
-            }
-            return INVALID_SOCKET;
-         }
-         break;
-         default:
-         {
-            cerr << "Could not bind UDP receive port"
-                 << "Error=" << e << " " << strerror(e) << endl;
-            return INVALID_SOCKET;
-         }
-         break;
-      }
+   //return 0 stand for success
+   while(bind( fd,(struct sockaddr*)&addr, sizeof(addr)) == -1){
+      perror("bind error");
+      addr.sin_port=htons(++port);
+
    }
+
+
+//   if ( bind( fd,(struct sockaddr*)&addr, sizeof(addr)) != 0 )
+//   {
+//      int e = getErrno();
+//
+//      switch (e)
+//      {
+//         case 0:
+//         {
+//            cerr << "Could not bind socket" << endl;
+//            return INVALID_SOCKET;
+//         }
+//         case EADDRINUSE:
+//         {
+//            cerr << "Port " << port << " for receiving UDP is in use" << endl;
+//            return INVALID_SOCKET;
+//         }
+//         break;
+//         case EADDRNOTAVAIL:
+//         {
+//            if ( verbose )
+//            {
+//               cerr << "Cannot assign requested address" << endl;
+//            }
+//            return INVALID_SOCKET;
+//         }
+//         break;
+//         default:
+//         {
+//            cerr << "Could not bind UDP receive port"
+//                 << "Error=" << e << " " << strerror(e) << endl;
+//            return INVALID_SOCKET;
+//         }
+//         break;
+//      }
+//   }
    if ( verbose )
    {
       clog << "Opened port " << port << " with fd " << fd << endl;

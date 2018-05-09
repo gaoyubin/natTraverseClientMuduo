@@ -22,7 +22,7 @@ using namespace std;
 
 
 //add by gaoyubin
-StunAddress4 g_reflexStunAddr4h;
+//StunAddress4 g_reflexStunAddr4h;
 string  getNatTypeStr(MyNatType natType){
     switch (natType){
         case NatTypeBlocked:
@@ -64,6 +64,7 @@ stunSendTest( Socket myFd, StunAddress4& dest,
         case 9:
         case 10:
         case 11:
+        case 12:
             break;
         case 2:
             //changePort=true;
@@ -117,26 +118,7 @@ stunSendTest( Socket myFd, StunAddress4& dest,
 }
 
 
-bool operator==(StunAddress4& a,StunAddress4& b){
-    if(a.addr==b.addr && a.port==b.port)
-       return true;
-    else
-       return false;
 
-}
-bool operator<(StunAddress4& a,StunAddress4& b){
-    if(a.addr<b.addr)
-        return true;
-    else if(a.addr==b.addr){
-        if(a.port<b.port)
-            return true;
-        else
-            return false;
-    }
-    else
-        return false;
-
-}
 #define MAX_IFS 32
 int getIpInterface(char *localIp,char *netMask,char*netInterface)
 {
@@ -204,6 +186,7 @@ bool checkIsSymInc(vector<StunAddress4>&stunAddrVect,int &symIncDiff){
     if(stunAddrVect.size()<2){
         return false;
     }
+
     symIncDiff=65535;
     int preDiff=stunAddrVect[1].port-stunAddrVect[0].port;
     for(int i=1;i<stunAddrVect.size();++i){
@@ -214,6 +197,8 @@ bool checkIsSymInc(vector<StunAddress4>&stunAddrVect,int &symIncDiff){
             symIncDiff=min(symIncDiff,nowDiff);
 
         }
+        else if(nowDiff<0)
+            continue;
         else{
             return false;
         }
@@ -229,25 +214,20 @@ bool checkIsSymInc(vector<StunAddress4>&stunAddrVect,int &symIncDiff){
 MyNatType
 detectNatType(StunAddress4 &dest1,
               bool verbose,
-              StunAddress4 *sAddr // NIC to use
+              vector<Component>&compVect
 )
 {
+    int symIncDiff=0;
     assert( dest1.addr != 0 );
     assert( dest1.port != 0 );
 
     StunAddress4 dest2=dest1;
     dest2.port+=1;
 
-    UInt32 interfaceIp=0;
-    UInt16 port=22331;
-    if (sAddr)
-    {
-        interfaceIp = sAddr->addr;
-        port=sAddr->port;
 
-    }
-    Socket myFd1 = openPort(port++,interfaceIp,verbose);
-    Socket myFd2 = openPort(port++,interfaceIp,verbose);
+
+    Socket myFd1 = openValidPort(compVect[0].uHostAddr.port,ntohl(inet_addr(compVect[0].uHostAddr.ip.c_str())),verbose);
+    Socket myFd2 = openValidPort(compVect[1].uHostAddr.port,ntohl(inet_addr(compVect[1].uHostAddr.ip.c_str())),verbose);
 
 //    Socket myFd3 = openPort(port++,interfaceIp,verbose);
 //    Socket myFd4 = openPort(port++,interfaceIp,verbose);
@@ -398,33 +378,50 @@ detectNatType(StunAddress4 &dest1,
                         if(validRespCnt==4){
                             //add by gaoyubin
                             //stunSendTest( myFd1, dest1, username, password, 7 ,verbose );
-                            int symIncDiff=0;
-                            g_reflexStunAddr4h=stunAddr4Vect[0];
+
+
+
+                            struct in_addr reflexInAddr;
+                            reflexInAddr.s_addr=htonl(stunAddr4Vect[0].addr);
+                            g_compVect[0].uReflexAddr.ip=inet_ntoa(reflexInAddr);
+                            g_compVect[0].uReflexAddr.port=stunAddr4Vect[0].port;
+
+                            reflexInAddr.s_addr=htonl(stunAddr4Vect[2].addr);
+                            g_compVect[1].uReflexAddr.ip=inet_ntoa(reflexInAddr);
+                            g_compVect[1].uReflexAddr.port=stunAddr4Vect[2].port;
+
                             char localIP[32];
                             getIpInterface(localIP,NULL,NULL);
                             if(ntohl(inet_addr(localIP))==stunAddr4Vect[0].addr)
                                 natType=NatTypeOpen;
                             if(stunAddr4Vect[0]==stunAddr4Vect[1])
                                 natType= NatTypeCone;
-                            else if(stunAddr4Vect[0].port==port-1 && stunAddr4Vect[2].port==port)
+                            else if(stunAddr4Vect[0].port==compVect[0].uHostAddr.port && stunAddr4Vect[2].port==compVect[1].uHostAddr.port)
                                 natType= NatTypeSymOneToOne;
 //                            else if(stunAddr4Vect[0]<stunAddr4Vect[1] &&
 //                                    stunAddr4Vect[1]<stunAddr4Vect[2] &&
 //                                    stunAddr4Vect[2]<stunAddr4Vect[3])
                             else if(checkIsSymInc(stunAddr4Vect,symIncDiff)){
-                                g_reflexStunAddr4h=stunAddr4Vect[3];
-                                g_reflexStunAddr4h.port+=symIncDiff;
-                                natType= NatTypeSymInc;
+//                                g_reflexStunAddr4h=stunAddr4Vect[3];
+//                                g_reflexStunAddr4h.port+=symIncDiff;
+                                  g_compVect[0].uReflexAddr.port=stunAddr4Vect[3].port+symIncDiff;
+                                  g_compVect[1].uReflexAddr.port=stunAddr4Vect[3].port+2*symIncDiff;
+
+                                  g_compVect[0].step=symIncDiff;
+                                  g_compVect[1].step=symIncDiff;
+                                  natType= NatTypeSymInc;
+
 
                             }
 
                             else{
                                 sort(stunAddr4Vect.begin(),stunAddr4Vect.end());
 
-                                g_reflexStunAddr4h.port=(stunAddr4Vect[0].port+stunAddr4Vect[3].port)/2;
+                                //g_reflexStunAddr4h.port=(stunAddr4Vect[0].port+stunAddr4Vect[3].port)/2;
                                 natType= NatTypeSymRandom;
                             }
-
+                            //for test
+                            natType=NatTypeSymRandom;
 
                             //add by gaoyubin
                             stunSendTest( myFd1, dest1, username, password, 7 ,verbose );
@@ -444,4 +441,194 @@ detectNatType(StunAddress4 &dest1,
     close(myFd2);
     return natType;
 }
+bool getSymIncPort(StunAddress4 &stunSvrAddr3478, vector<StunAddress4> &peerAddr4Vect, vector<Component> &compVect){
+
+
+    //UInt16 port=rand()%3000+4000;
+    //cout<<"port: "<<port<<endl;
+    bool verbose=false;
+    StunAddress4 stunSvrAddr3479=stunSvrAddr3478;
+    stunSvrAddr3479.port++;
+    int validRespCnt=0;
+    int sa4VectOffset=7;
+    Socket myFd1 = openValidPort(compVect[0].uHostAddr.port,ntohl(inet_addr(compVect[0].uHostAddr.ip.c_str())),verbose);
+    Socket myFd2 = openValidPort(compVect[1].uHostAddr.port,ntohl(inet_addr(compVect[1].uHostAddr.ip.c_str())),verbose);
+    //Socket myFd3 = openPort(localAddr.port+1,ntohl(inet_addr(localAddr.ip.c_str())),verbose);
+
+
+
+    if ( ( myFd1 == INVALID_SOCKET) || ( myFd2 == INVALID_SOCKET)  )
+    {
+        cerr << "Some problem opening port/interface to send on" << endl;
+        return false;
+    }
+
+
+
+    StunAtrString username;
+    StunAtrString password;
+
+    username.sizeValue = 0;
+    password.sizeValue = 0;
+
+    int count=0;
+
+    vector<StunAddress4>stunAddrVect(3);
+    while ( count < 5 )
+    {
+        struct timeval tv;
+        fd_set fdSet;
+#ifdef WIN32
+        unsigned int fdSetSize;
+#else
+        int fdSetSize;
+#endif
+        FD_ZERO(&fdSet); fdSetSize=0;
+        FD_SET(myFd1,&fdSet); fdSetSize = (myFd1+1>fdSetSize) ? myFd1+1 : fdSetSize;
+        FD_SET(myFd2,&fdSet); fdSetSize = (myFd2+1>fdSetSize) ? myFd2+1 : fdSetSize;
+        //FD_SET(myFd3,&fdSet); fdSetSize = (myFd3+1>fdSetSize) ? myFd3+1 : fdSetSize;
+        tv.tv_sec=0;
+        tv.tv_usec=150*1000; // 150 ms
+        if ( count == 0 ) tv.tv_usec=0;
+
+        int  err = select(fdSetSize, &fdSet, NULL, NULL, &tv);
+        int e = getErrno();
+        if ( err == SOCKET_ERROR )
+        {
+            // error occured
+            cerr << "Error " << e << " " << strerror(e) << " in select" << endl;
+            break;
+        }
+        else if ( err == 0 )
+        {
+            count++;
+            for(int i=0;i<2;i++)
+                stunSendTest( myFd1, stunSvrAddr3478, username, password, 7 ,verbose );
+            //for test
+            stunSendTest( myFd2, stunSvrAddr3479, username, password, 12 ,verbose );
+            for(int i=0;i<2;i++)
+                stunSendTest( myFd1, peerAddr4Vect[0], username, password, 10 ,verbose );
+            for(int i=0;i<2;i++)
+                stunSendTest( myFd1, stunSvrAddr3479, username, password, 8 ,verbose );
+
+            for(int i=0;i<2;i++)
+                stunSendTest( myFd2, peerAddr4Vect[1], username, password, 11 ,verbose );
+
+            for(int i=0;i<2;i++)
+                stunSendTest( myFd2, stunSvrAddr3478, username, password, 9 ,verbose );
+
+        }
+        else
+        {
+            if (verbose) clog << "-----------------------------------------" << endl;
+            assert( err>0 );
+            // data is avialbe on some fd
+
+            for ( int i=0; i<2; i++)
+            {
+                Socket myFd;
+                if ( i==0 )
+                {
+                    myFd=myFd1;
+                }
+                else if(i==1)
+                {
+                    myFd=myFd2;
+                }
+
+
+
+                if ( myFd!=INVALID_SOCKET )
+                {
+                    if ( FD_ISSET(myFd,&fdSet) )
+                    {
+                        char msg[STUN_MAX_MESSAGE_SIZE];
+                        int msgLen = sizeof(msg);
+
+                        StunAddress4 from;
+
+                        getMessage( myFd,
+                                    msg,
+                                    &msgLen,
+                                    &from.addr,
+                                    &from.port,verbose );
+
+                        StunMessage resp;
+                        memset(&resp, 0, sizeof(StunMessage));
+
+                        stunParseMessage( msg,msgLen, resp,verbose );
+
+                        if ( verbose )
+                        {
+                            clog << "Received message of type " << resp.msgHdr.msgType
+                                 << "  id=" << (int)(resp.msgHdr.id.octet[0]) << endl;
+                        }
+
+                        StunAddress4 emptyStunAddr;
+                        if(resp.msgHdr.id.octet[0]-sa4VectOffset<stunAddrVect.size() &&  stunAddrVect[resp.msgHdr.id.octet[0]-sa4VectOffset]==emptyStunAddr){
+                            cout<<"index="<<resp.msgHdr.id.octet[0]-sa4VectOffset<<endl;
+                            stunAddrVect[resp.msgHdr.id.octet[0]-sa4VectOffset]=resp.mappedAddress.ipv4;
+                            validRespCnt++;
+                        }
+                        if(validRespCnt==3){
+                            struct in_addr inAddr;
+                            cout<<"the 3 receive ip from stun:"<<endl;
+                            for(int i=0;i<stunAddrVect.size();++i){
+                                inAddr.s_addr=htonl(stunAddrVect[i].addr);
+                                cout<<inet_ntoa(inAddr)<<":"<<stunAddrVect[i].port<<endl;
+                            }
+                            inAddr.s_addr=htonl(stunAddrVect[0].addr);
+                            compVect[0].uReflexAddr.ip=inet_ntoa(inAddr);
+                            compVect[1].uReflexAddr.ip=inet_ntoa(inAddr);
+                            if(stunAddrVect[1].port-stunAddrVect[0].port>0){
+                                compVect[0].uReflexAddr.port=stunAddrVect[0].port+compVect[0].step;
+                                compVect[0].len=stunAddrVect[1].port-compVect[0].uReflexAddr.port;
+                            }
+                            else{
+                                compVect[0].uReflexAddr.port=2049;
+                                compVect[0].len=stunAddrVect[1].port-compVect[0].uReflexAddr.port;
+                            }
+                            if(stunAddrVect[2].port-stunAddrVect[1].port>0){
+                                compVect[1].uReflexAddr.port=stunAddrVect[2].port+compVect[1].step;
+                                compVect[1].len=stunAddrVect[2].port-compVect[1].uReflexAddr.port;
+                            }
+                            else{
+                                compVect[1].uReflexAddr.port=2049;
+                                compVect[1].len=stunAddrVect[2].port-compVect[1].uReflexAddr.port;
+                            }
+
+
+//                            if(stunAddrVect[1].port-stunAddrVect[0].port==2*compVect[0].step){
+//                                compVect[0].len=compVect[0].step;
+//                            }
+//                            else{
+//                                compVect[0].len=stunAddrVect[1].port-stunAddrVect[0].port+compVect[1].step;
+//                            }
+//                            inAddr.s_addr=htonl(stunAddrVect[1].addr);
+//                            compVect[1].uReflexAddr.ip=inet_ntoa(inAddr);
+//                            compVect[1].uReflexAddr.port=stunAddrVect[1].port+compVect[1].step;
+//                            if(stunAddrVect[2].port-stunAddrVect[1].port==2*compVect[1].step){
+//                                compVect[1].len=compVect[1].step;
+//                            }
+//                            else{
+//                                compVect[1].len=stunAddrVect[2].port-stunAddrVect[1].port+compVect[1].step;
+//                            }
+                            close(myFd1);
+                            close(myFd2);
+
+                            return true;
+                        }
+
+
+                    }
+                }
+            }
+        }
+    }
+    close(myFd1);
+    close(myFd2);
+
+    return false;
+}
+
 
