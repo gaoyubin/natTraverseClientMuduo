@@ -8,13 +8,13 @@
 #include "MyStun.hpp"
 #include "stun.h"
 #include "udp.h"
-#include "../udpTraverse/udpTraverse.hpp"
+//#include "../udpTraverse/udpTraverse.hpp"
 
-#include <iostream>
-#include <vector>
+
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <algorithm>
+#include "../natTraverse.hpp"
 
 using namespace std;
 
@@ -197,8 +197,9 @@ bool checkIsSymInc(vector<StunAddress4>&stunAddrVect,int &symIncDiff){
             symIncDiff=min(symIncDiff,nowDiff);
 
         }
-        else if(nowDiff<0)
-            continue;
+            //for test
+//        else if(nowDiff<0)
+//            continue;
         else{
             return false;
         }
@@ -214,9 +215,11 @@ bool checkIsSymInc(vector<StunAddress4>&stunAddrVect,int &symIncDiff){
 MyNatType
 detectNatType(StunAddress4 &dest1,
               bool verbose,
-              vector<Component>&compVect
+              vector<UDPComponent>&compVect
 )
 {
+    printf("detectNatType func\n");
+
     int symIncDiff=0;
     assert( dest1.addr != 0 );
     assert( dest1.port != 0 );
@@ -224,10 +227,22 @@ detectNatType(StunAddress4 &dest1,
     StunAddress4 dest2=dest1;
     dest2.port+=1;
 
+    Socket myFd1;
+    Socket myFd2;
+    while(1){
+        if(compVect[0].uHostAddr.port&1!=0)
+            compVect[0].uHostAddr.port&=~1;
+        myFd1 = openValidPort(compVect[0].uHostAddr.port,ntohl(inet_addr(compVect[0].uHostAddr.ip.c_str())),verbose);
+        compVect[1].uHostAddr.port=compVect[0].uHostAddr.port+1;
+        myFd2 = openValidPort(compVect[1].uHostAddr.port,ntohl(inet_addr(compVect[1].uHostAddr.ip.c_str())),verbose);
 
-
-    Socket myFd1 = openValidPort(compVect[0].uHostAddr.port,ntohl(inet_addr(compVect[0].uHostAddr.ip.c_str())),verbose);
-    Socket myFd2 = openValidPort(compVect[1].uHostAddr.port,ntohl(inet_addr(compVect[1].uHostAddr.ip.c_str())),verbose);
+        printf("compVect[0].uHostAddr.port=%d,compVect[1].uHostAddr.port=%d\n",
+               compVect[0].uHostAddr.port,
+               compVect[1].uHostAddr.port);
+        if(compVect[1].uHostAddr.port==compVect[0].uHostAddr.port+1)
+            break;
+        compVect[0].uHostAddr.port=(compVect[1].uHostAddr.port+3)&~1;
+    }
 
 //    Socket myFd3 = openPort(port++,interfaceIp,verbose);
 //    Socket myFd4 = openPort(port++,interfaceIp,verbose);
@@ -264,7 +279,7 @@ detectNatType(StunAddress4 &dest1,
     int count=0;
 
     int validRespCnt=0;
-    while ( count <5 || validRespCnt<4)
+    while ( count<15 && validRespCnt<4)
     {
         struct timeval tv;
         fd_set fdSet;
@@ -383,18 +398,19 @@ detectNatType(StunAddress4 &dest1,
 
                             struct in_addr reflexInAddr;
                             reflexInAddr.s_addr=htonl(stunAddr4Vect[0].addr);
-                            g_compVect[0].uReflexAddr.ip=inet_ntoa(reflexInAddr);
-                            g_compVect[0].uReflexAddr.port=stunAddr4Vect[0].port;
+                            compVect[0].uReflexAddr.ip=inet_ntoa(reflexInAddr);
+                            compVect[0].uReflexAddr.port=stunAddr4Vect[0].port;
 
                             reflexInAddr.s_addr=htonl(stunAddr4Vect[2].addr);
-                            g_compVect[1].uReflexAddr.ip=inet_ntoa(reflexInAddr);
-                            g_compVect[1].uReflexAddr.port=stunAddr4Vect[2].port;
+                            compVect[1].uReflexAddr.ip=inet_ntoa(reflexInAddr);
+                            compVect[1].uReflexAddr.port=stunAddr4Vect[2].port;
 
                             char localIP[32];
                             getIpInterface(localIP,NULL,NULL);
+                            //printf("localIP=%x,stunAddr4Vect=%x\n",ntohl(inet_addr(localIP)),stunAddr4Vect[0].addr);
                             if(ntohl(inet_addr(localIP))==stunAddr4Vect[0].addr)
                                 natType=NatTypeOpen;
-                            if(stunAddr4Vect[0]==stunAddr4Vect[1])
+                            else if(stunAddr4Vect[0]==stunAddr4Vect[1])
                                 natType= NatTypeCone;
                             else if(stunAddr4Vect[0].port==compVect[0].uHostAddr.port && stunAddr4Vect[2].port==compVect[1].uHostAddr.port)
                                 natType= NatTypeSymOneToOne;
@@ -404,12 +420,12 @@ detectNatType(StunAddress4 &dest1,
                             else if(checkIsSymInc(stunAddr4Vect,symIncDiff)){
 //                                g_reflexStunAddr4h=stunAddr4Vect[3];
 //                                g_reflexStunAddr4h.port+=symIncDiff;
-                                  g_compVect[0].uReflexAddr.port=stunAddr4Vect[3].port+symIncDiff;
-                                  g_compVect[1].uReflexAddr.port=stunAddr4Vect[3].port+2*symIncDiff;
+                                compVect[0].uReflexAddr.port=stunAddr4Vect[3].port+symIncDiff;
+                                compVect[1].uReflexAddr.port=stunAddr4Vect[3].port+2*symIncDiff;
 
-                                  g_compVect[0].step=symIncDiff;
-                                  g_compVect[1].step=symIncDiff;
-                                  natType= NatTypeSymInc;
+                                compVect[0].step=symIncDiff;
+                                compVect[1].step=symIncDiff;
+                                natType= NatTypeSymInc;
 
 
                             }
@@ -421,7 +437,7 @@ detectNatType(StunAddress4 &dest1,
                                 natType= NatTypeSymRandom;
                             }
                             //for test
-                            natType=NatTypeSymRandom;
+                            //natType=NatTypeSymRandom;
 
                             //add by gaoyubin
                             stunSendTest( myFd1, dest1, username, password, 7 ,verbose );
@@ -441,7 +457,7 @@ detectNatType(StunAddress4 &dest1,
     close(myFd2);
     return natType;
 }
-bool getSymIncPort(StunAddress4 &stunSvrAddr3478, vector<StunAddress4> &peerAddr4Vect, vector<Component> &compVect){
+bool getSymIncPort(StunAddress4 &stunSvrAddr3478, vector<StunAddress4> &peerAddr4Vect, vector<UDPComponent> &compVect){
 
 
     //UInt16 port=rand()%3000+4000;
@@ -451,10 +467,26 @@ bool getSymIncPort(StunAddress4 &stunSvrAddr3478, vector<StunAddress4> &peerAddr
     stunSvrAddr3479.port++;
     int validRespCnt=0;
     int sa4VectOffset=7;
-    Socket myFd1 = openValidPort(compVect[0].uHostAddr.port,ntohl(inet_addr(compVect[0].uHostAddr.ip.c_str())),verbose);
-    Socket myFd2 = openValidPort(compVect[1].uHostAddr.port,ntohl(inet_addr(compVect[1].uHostAddr.ip.c_str())),verbose);
-    //Socket myFd3 = openPort(localAddr.port+1,ntohl(inet_addr(localAddr.ip.c_str())),verbose);
 
+//    Socket myFd1 = openValidPort(compVect[0].uHostAddr.port,ntohl(inet_addr(compVect[0].uHostAddr.ip.c_str())),verbose);
+//    Socket myFd2 = openValidPort(compVect[1].uHostAddr.port,ntohl(inet_addr(compVect[1].uHostAddr.ip.c_str())),verbose);
+    //Socket myFd3 = openPort(localAddr.port+1,ntohl(inet_addr(localAddr.ip.c_str())),verbose);
+    Socket myFd1;
+    Socket myFd2;
+    while(1){
+        if(compVect[0].uHostAddr.port&1!=0)
+            compVect[0].uHostAddr.port&=~1;
+        myFd1 = openValidPort(compVect[0].uHostAddr.port,ntohl(inet_addr(compVect[0].uHostAddr.ip.c_str())),verbose);
+        compVect[1].uHostAddr.port=compVect[0].uHostAddr.port+1;
+        myFd2 = openValidPort(compVect[1].uHostAddr.port,ntohl(inet_addr(compVect[1].uHostAddr.ip.c_str())),verbose);
+
+        printf("compVect[0].uHostAddr.port=%d,compVect[1].uHostAddr.port=%d\n",
+               compVect[0].uHostAddr.port,
+               compVect[1].uHostAddr.port);
+        if(compVect[1].uHostAddr.port==compVect[0].uHostAddr.port+1)
+            break;
+        compVect[0].uHostAddr.port=(compVect[1].uHostAddr.port+3)&~1;
+    }
 
 
     if ( ( myFd1 == INVALID_SOCKET) || ( myFd2 == INVALID_SOCKET)  )
@@ -504,7 +536,7 @@ bool getSymIncPort(StunAddress4 &stunSvrAddr3478, vector<StunAddress4> &peerAddr
             count++;
             for(int i=0;i<2;i++)
                 stunSendTest( myFd1, stunSvrAddr3478, username, password, 7 ,verbose );
-            //for test
+            //#for test
             stunSendTest( myFd2, stunSvrAddr3479, username, password, 12 ,verbose );
             for(int i=0;i<2;i++)
                 stunSendTest( myFd1, peerAddr4Vect[0], username, password, 10 ,verbose );
@@ -589,7 +621,7 @@ bool getSymIncPort(StunAddress4 &stunSvrAddr3478, vector<StunAddress4> &peerAddr
                                 compVect[0].len=stunAddrVect[1].port-compVect[0].uReflexAddr.port;
                             }
                             if(stunAddrVect[2].port-stunAddrVect[1].port>0){
-                                compVect[1].uReflexAddr.port=stunAddrVect[2].port+compVect[1].step;
+                                compVect[1].uReflexAddr.port=stunAddrVect[1].port+compVect[1].step;
                                 compVect[1].len=stunAddrVect[2].port-compVect[1].uReflexAddr.port;
                             }
                             else{

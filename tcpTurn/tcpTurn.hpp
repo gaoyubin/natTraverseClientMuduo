@@ -1,0 +1,10 @@
+//
+// Created by tl on 18-5-10.
+//
+
+#ifndef NATTRAVERSECLIENTMUDUO_TCPTURN_HPP
+#define NATTRAVERSECLIENTMUDUO_TCPTURN_HPP
+
+void*  turnTCP(void*arg);
+
+#endif //NATTRAVERSECLIENTMUDUO_TCPTURN_HPP

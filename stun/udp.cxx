@@ -146,7 +146,7 @@ openValidPort( unsigned short& port, unsigned int interfaceIp, bool verbose )
    //return 0 stand for success
    while(bind( fd,(struct sockaddr*)&addr, sizeof(addr)) == -1){
       perror("bind error");
-      addr.sin_port=htons(++port);
+      addr.sin_port=htons(port+=2);
 
    }
 

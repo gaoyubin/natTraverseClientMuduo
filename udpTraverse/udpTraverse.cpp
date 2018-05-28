@@ -18,6 +18,7 @@
 #include <sys/epoll.h>
 #include <vector>
 #include <assert.h>
+#include <json/json.h>
 
 #include "../stun/stun.h"
 #include "../stun/udp.h"
@@ -130,9 +131,6 @@ void* recvUdpBuf(void *arg){
                    ntohs(sourceAddrIn.sin_port),
                    inBuf);
 
-
-
-
         }
 
     }
@@ -226,9 +224,15 @@ void*  udpTraverse(void*arg) {
 
 #define MAX_EPOLL_SIZE  32
 
+struct TrResAddr{
 
-void*  udpTraverse(void*arg) {
+    Addr peerReflexAddr;
+    Addr uReflexAddr;
+};
+//trAddrInfoVect the first member is the localAddr,the last member is turnSvr,
+void*  traverseUDP(void *arg) {
 
+    printf("traverseUDP func\n");
     int  epfd, nfds;
 
     struct epoll_event ev;
@@ -236,16 +240,23 @@ void*  udpTraverse(void*arg) {
     int opt = 1;;
     int ret = 0;
 
+    printf("arg addr=%x\n",arg);
+    vector<TrAddrInfo> trAddrInfoVect=((UDPComponent*)arg)->trAddrInfoVect;//*(vector<TrAddrInfo>*)arg;
 
-    vector<TrAddrInfo> trAddrInfoVect=*(vector<TrAddrInfo>*)arg;
-
+    UDPComponent*udpComponentPtr=(UDPComponent*)arg;
+    map<int,TrResAddr>trResAddrMap;
+    map<Addr,int>addrHeightMap;
+    for(int i=1;i<trAddrInfoVect.size()-1;i++)
+    {
+        addrHeightMap[trAddrInfoVect[i].addr]=i;
+    }
     struct sockaddr_in uAddrIn;
     struct sockaddr_in peerAddrIn;
     struct sockaddr_in sourceAddrIn;
 
     int sockfd;
     //int*traverseFlagPtr=new int(0);
-    Addr* traverseAddrPtr=new Addr;
+    //Addr* traverseAddrPtr=new Addr;
 
     uAddrIn.sin_family = AF_INET;
     uAddrIn.sin_port = htons(trAddrInfoVect[0].addr.port);
@@ -263,9 +274,10 @@ void*  udpTraverse(void*arg) {
     if ((sockfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
         perror("socket");
         exit(1);
-    } else {
-        printf("socket OK\n");
     }
+//    else {
+//        printf("socket OK\n");
+//    }
 
     ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     if (ret) {
@@ -279,9 +291,10 @@ void*  udpTraverse(void*arg) {
     if (bind(sockfd, (struct sockaddr *) &uAddrIn, sizeof(struct sockaddr)) == -1) {
         perror("bind");
         exit(1);
-    } else {
-        printf("IP bind OK\n");
     }
+//    else {
+//        printf("IP bind OK\n");
+//    }
 
     epfd = epoll_create(MAX_EPOLL_SIZE);
     if (epfd == -1) {
@@ -293,13 +306,15 @@ void*  udpTraverse(void*arg) {
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &ev) < 0) {
         fprintf(stderr, "epoll set insertion error: fd=%dn", sockfd);
         exit(1);
-    } else {
-        printf("ep add OK\n");
     }
+//    else {
+//        printf("ep add OK\n");
+//    }
     //string outStr="traverse";
     int cnt=0;
-    while (cnt<=10) {
-
+    while (cnt<=40) {
+//        if(trAddrInfoVect.size()<=2)
+//            break;
         nfds = epoll_wait(epfd, events, sizeof(events) / sizeof(epoll_event), 40);
         if(nfds==-1){
             perror("");
@@ -309,15 +324,27 @@ void*  udpTraverse(void*arg) {
             //break;
             cnt++;
             for(int i=1;i<trAddrInfoVect.size()-1;++i){
-                string outStr=trAddrInfoVect[i].outStr;
+
                 string peerIP=trAddrInfoVect[i].addr.ip;
-                uint16_t  peerPort=trAddrInfoVect[i].addr.port;
+                int  peerPort=trAddrInfoVect[i].addr.port;
+
+                string outStr;
+                Json::Value outVal;
+                outVal["cmd"]=trAddrInfoVect[i].outStr;
+                outVal["IP"]=peerIP;
+                outVal["port"]=peerPort;
 
                 //int curOffset=trAddrInfoVect[i].len==0?0:trAddrInfoVect[i].step++;
                 if(trAddrInfoVect[i].step!=0){
                     for(int j=0;j<trAddrInfoVect[i].len/trAddrInfoVect[i].step;++j){
                         peerAddrIn.sin_port = htons(peerPort+j*trAddrInfoVect[i].step);
                         peerAddrIn.sin_addr.s_addr = inet_addr(peerIP.c_str());
+
+
+
+                        outVal["port"]=peerPort+j*trAddrInfoVect[i].step;
+                        outStr=outVal.toStyledString();
+
                         int len = sendto(sockfd,outStr.c_str(),outStr.size(),0,(struct sockaddr*)&peerAddrIn,sizeof(peerAddrIn));
                         if (len == -1) {
                             perror("while sending package to C2 , sendto() failed:");
@@ -330,6 +357,8 @@ void*  udpTraverse(void*arg) {
                 else{
                     peerAddrIn.sin_port = htons(peerPort);
                     peerAddrIn.sin_addr.s_addr = inet_addr(peerIP.c_str());
+
+                    outStr=outVal.toStyledString();
                     int len = sendto(sockfd,outStr.c_str(),outStr.size(),0,(struct sockaddr*)&peerAddrIn,sizeof(peerAddrIn));
                     if (len == -1) {
                         perror("while sending package to C2 , sendto() failed:");
@@ -357,13 +386,11 @@ void*  udpTraverse(void*arg) {
             memset(inBuf,0,sizeof(inBuf));
             socklen_t sourceAddrLen=sizeof(struct sockaddr);
             int len = recvfrom(sockfd, inBuf, sizeof(inBuf), 0,(struct sockaddr*)&sourceAddrIn,&sourceAddrLen);
-            printf("thread %x traverse succes peerAddr is %s:%d\n",pthread_self(),inet_ntoa(sourceAddrIn.sin_addr),ntohs(sourceAddrIn.sin_port));
-
-            if(len<=0){
+            printf("-------------------------------------------thread %x traverse succes ,content [ %s ] , peerAddr is %s:%d\n",pthread_self(),inBuf,inet_ntoa(sourceAddrIn.sin_addr),ntohs(sourceAddrIn.sin_port));
+            if(len<=0)
                 perror("recvfrom");
 
-            }
-            else{
+#if 0
                 //printf("recv from %s:%d------%s\n",inet_ntoa(sourceAddrIn.sin_addr),ntohs(sourceAddrIn.sin_port),inBuf);
 //                if(inet_addr(trAddrInfoVect[1].addr.ip.c_str())==sourceAddrIn.sin_addr.s_addr &&
 //                    htons(trAddrInfoVect[1].addr.port)==sourceAddrIn.sin_port){
@@ -392,18 +419,24 @@ void*  udpTraverse(void*arg) {
 //                    continue;
 //                }
                 if(strcmp(inBuf,"traverse")==0){
-                    for(int i=0;i<trAddrInfoVect.size();++i){
+                    for(int i=0;i<trAddrInfoVect.size()-1;++i){
                         if(trAddrInfoVect[i].addr.ip==inet_ntoa(sourceAddrIn.sin_addr)){
                             trAddrInfoVect[i].outStr="ask";
                         }
                     }
-                    if( *traverseAddrPtr==Addr() ||   (*traverseAddrPtr!=Addr() && inet_addr(trAddrInfoVect[1].addr.ip.c_str())!=sourceAddrIn.sin_addr.s_addr) )
+                    if( *traverseAddrPtr==Addr() ||   (*traverseAddrPtr!=Addr() && inet_addr(trAddrInfoVect[1].addr.ip.c_str())==sourceAddrIn.sin_addr.s_addr) ){
                         *traverseAddrPtr=Addr(inet_ntoa(sourceAddrIn.sin_addr),ntohs(sourceAddrIn.sin_port));
+
+                    }
+
+
 
                 }
                 else if(strcmp(inBuf,"ask")==0){
                     if(inet_addr(trAddrInfoVect[1].addr.ip.c_str())==sourceAddrIn.sin_addr.s_addr ){
                        *traverseAddrPtr=Addr(inet_ntoa(sourceAddrIn.sin_addr),ntohs(sourceAddrIn.sin_port));
+                        if(trAddrInfoVect.size()==4)//the host
+                            udpComponentPtr->uReflexAddr=udpComponentPtr->peerReflexAddr;
                         break;
                     }
                     else if(*traverseAddrPtr==Addr()){
@@ -411,20 +444,85 @@ void*  udpTraverse(void*arg) {
                     }
                     //*traverseFlagPtr=1;
                 }
+#endif
+            Json::Reader reader;
+            Json::Value inVal;
+            string inStr=inBuf;
+            if(reader.parse(inStr,inVal)){
+                Addr sourceAddr=Addr(inet_ntoa(sourceAddrIn.sin_addr),ntohs(sourceAddrIn.sin_port));
+                int height=0;
+                if(addrHeightMap.find(sourceAddr)==addrHeightMap.end())
+                {
+                    printf("cannot find sourceAddr in addrHeightMap\n");
+                    for(auto it=addrHeightMap.begin();it!=addrHeightMap.end();++it){
+                        if(sourceAddr.ip==it->first.ip){
+                            height=it->second;
+                            printf("height %d choose the %s:%d\n",height,it->first.ip.c_str(),it->first.port);
+                            break;
 
+                        }
+
+                    }
+                }
+                else{
+                    height=addrHeightMap[sourceAddr];
+                }
+
+                if(inVal["cmd"].asString()=="traverse"){
+                    // the height is equal the index
+                    cnt/=2;
+                    trAddrInfoVect[height].outStr="ask";
+//                    if(height==1)
+//                        break;
+
+                }
+                else if(inVal["cmd"].asString()=="ask"){
+                    trAddrInfoVect[height].outStr="ask";
+                    trResAddrMap[height].peerReflexAddr=sourceAddr;
+                    trResAddrMap[height].uReflexAddr=Addr(inVal["IP"].asString(),inVal["port"].asInt());
+//                    if(height==1){
+//                        break;
+//                    }
+                }
+//                else if(inVal["cmd"].asString()=="OK"){//turn success
+//                    printf("turn success\n");
+//                    trAddrInfoVect.pop_back();
+//                }
             }
+
+
 
         }
 
-
     }
 
+
+
+
     close(sockfd);
-    if(*traverseAddrPtr==Addr()){//can not traverse ,so use turn
+//    if(*traverseAddrPtr==Addr()){//can not traverse ,so use turn
+//        cout<<"traverse fail"<<endl;
+//        printf("the client addr is %s:%d\n",trAddrInfoVect[0].addr.ip,trAddrInfoVect[0].addr.port);
+//        if(turnUDP(trAddrInfoVect[0].addr, trAddrInfoVect.back().addr, trAddrInfoVect.back().outStr)){
+//            *traverseAddrPtr=trAddrInfoVect.back().addr;
+//            cout<<"turn success"<<endl;
+//        }
+//        else{
+//            cout<<"turn fail"<<endl;
+//        }
+//    }
+//    else{
+//        cout<<"---------------------------------------------------------------------------traverse success"<<endl;
+//    }
+
+    if(trResAddrMap.size()==0){
         cout<<"traverse fail"<<endl;
-        printf("the client addr is %s:%d\n",trAddrInfoVect[0].addr.ip,trAddrInfoVect[0].addr.port);
-        if(udpTurn(trAddrInfoVect[0].addr,trAddrInfoVect.back().addr,trAddrInfoVect.back().outStr)){
-            *traverseAddrPtr=trAddrInfoVect.back().addr;
+        printf("the client addr is %s:%d\n",trAddrInfoVect[0].addr.ip.c_str(),trAddrInfoVect[0].addr.port);
+
+        //for test
+        if(turnUDP(trAddrInfoVect[0].addr, trAddrInfoVect.back().addr, trAddrInfoVect.back().outStr)){
+            trResAddrMap[1].peerReflexAddr=trAddrInfoVect.back().addr;
+            trResAddrMap[1].uReflexAddr=trAddrInfoVect.back().addr;
             cout<<"turn success"<<endl;
         }
         else{
@@ -434,12 +532,18 @@ void*  udpTraverse(void*arg) {
     else{
         cout<<"---------------------------------------------------------------------------traverse success"<<endl;
     }
+
+
     //cout<<*traverseAddrPtr<<endl;
-    //printf("*traverseAddrPtr=%d\n",*traverseAddrPtr);
-    cout<<"*traverseAddrPtr="<<*traverseAddrPtr<<endl;
+    //printf("*traverseAddrPtr=%s:%d\n",traverseAddrPtr->ip.c_str(), traverseAddrPtr->port);
+    //cout<<"*traverseAddrPtr="<<*traverseAddrPtr<<endl;
     //cout<<"g_isTraversed"<<" "<<*traverseFlagPtr<<endl;
 
-    pthread_exit((void*)traverseAddrPtr);
+    if(trResAddrMap.begin()->second.uReflexAddr!=Addr())
+        udpComponentPtr->uReflexAddr=trResAddrMap.begin()->second.uReflexAddr;
+    udpComponentPtr->peerReflexAddr=trResAddrMap.begin()->second.peerReflexAddr;
+    pthread_exit(NULL);
+
 
 }
 

@@ -6,9 +6,9 @@
 #define NATTRAVERSECLIENTMUDUO_UDPTURN_HPP
 
 #include <string>
-#include "../udpTraverse/udpTraverse.hpp"
+#include "../natTraverse.hpp"
 
 using namespace std;
-bool udpTurn(Addr& cliAddr,Addr& svrAddr ,string &id);
+bool turnUDP(Addr &cliAddr, Addr &svrAddr, string &id);
 
 #endif //NATTRAVERSECLIENTMUDUO_UDPTURN_HPP

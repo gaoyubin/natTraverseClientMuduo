@@ -7,11 +7,28 @@
 #include <zconf.h>
 #include "heartBeat.hpp"
 #include "../udpTraverse/udpTraverse.hpp"
+#include "../natTraverse.hpp"
+//
+//#define DEF 65535*65535
+//
+//typedef void (*pFunction)(int);
+//
+//int testChangeSignature(int a, int b, int i) {
+//    int maxvalue=DEF;
+//    void f(int);
+//    pFunction pf1 = &f;
+//    return a + i;
+//
+//}
 
 //only send never recv
-void* sendHeartBeat(void *arg){
-    Component comp=*(Component*)arg;
+void* sendUDPHeartBeat(void *arg){
+
+    //cout << testChangeSignature(2, 0, 1) << endl;
+    printf("sendUDPHeartBeat func\n");
+    UDPComponent comp=*(UDPComponent*)arg;
     struct sockaddr_in uAddrIn;
+    
     struct sockaddr_in peerAddrIn;
 
     int sockfd;
@@ -30,9 +47,10 @@ void* sendHeartBeat(void *arg){
     if ((sockfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
         perror("socket");
         exit(1);
-    } else {
-        printf("socket OK\n");
     }
+//    else {
+//        printf("socket OK\n");
+//    }
     int opt=1;
     int ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     if (ret) {
@@ -46,9 +64,10 @@ void* sendHeartBeat(void *arg){
     if (bind(sockfd, (struct sockaddr *) &uAddrIn, sizeof(struct sockaddr)) == -1) {
         perror("bind");
         exit(1);
-    } else {
-        printf("IP bind OK\n");
     }
+//    else {
+//        printf("IP bind OK\n");
+//    }
 
 
     struct sockaddr_in unRecvAddrIn;
@@ -66,16 +85,20 @@ void* sendHeartBeat(void *arg){
     peerAddrIn.sin_family = AF_INET;
     peerAddrIn.sin_port = htons(comp.peerReflexAddr.port);
     peerAddrIn.sin_addr.s_addr = inet_addr(comp.peerReflexAddr.ip.c_str());
+    printf("thread %x send heartBeat to %s:%d\n",pthread_self(),comp.peerReflexAddr.ip.c_str(),comp.peerReflexAddr.port);
     while(1){
 
-        int len = sendto(sockfd,"",0,0,(struct sockaddr*)&peerAddrIn,sizeof(peerAddrIn));
+        string sendStr="";
+        int len = sendto(sockfd,sendStr.c_str(),sendStr.size(),0,(struct sockaddr*)&peerAddrIn,sizeof(peerAddrIn));
+        //usleep(300*1000);
+
         sleep(3);
         if (len == -1) {
             perror("while sending package to C2 , sendto() failed:");
             close(sockfd);
             return NULL;
         }
-        printf("thread %x send to %s:%d\n",pthread_self(),comp.peerReflexAddr.ip.c_str(),comp.peerReflexAddr.port);
+
     }
 
 

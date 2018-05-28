@@ -5,8 +5,5 @@
 #ifndef NATTRAVERSECLIENTMUDUO_HEARTBEAT_HPP
 #define NATTRAVERSECLIENTMUDUO_HEARTBEAT_HPP
 
-
-void* sendHeartBeat(void *arg);
-
-
+void* sendUDPHeartBeat(void *arg);
 #endif //NATTRAVERSECLIENTMUDUO_HEARTBEAT_HPP
